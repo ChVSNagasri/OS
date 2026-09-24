@@ -84,23 +84,32 @@ usertrap(void)
 
   // give up the CPU if this is a timer interrupt.
     // =========================================================
-  // SCHEDFORGE TIMER / ROUND ROBIN QUANTUM
-  // =========================================================
+// SCHEDFORGE TIMER / ROUND ROBIN QUANTUM
+// =========================================================
 
-  if (which_dev == 2) {
-    if (schedforge_policy == SCHED_RR) {
-      if (p->time_slice > 0)
-        p->time_slice--;
+if (which_dev == 2) {
 
-      if (p->time_slice <= 0) {
-        p->time_slice = RR_QUANTUM;
-        yield();
-      }
-    } else {
+  if (schedforge_policy == SCHED_RR) {
+
+    if (p->time_slice > 0)
+      p->time_slice--;
+
+    if (p->time_slice <= 0) {
+
+      // SchedForge: record completed RR time slice
+      p->time_slices++;
+
+      // Reset quantum for next CPU allocation
+      p->time_slice = RR_QUANTUM;
+
       yield();
     }
-  }
 
+  } else {
+
+    yield();
+  }
+}
   prepare_return();
 
   // the user page table to switch to, for trampoline.S

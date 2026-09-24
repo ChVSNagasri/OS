@@ -8,7 +8,6 @@
 #include "schedforge.h"
 
 struct cpu cpus[NCPU];
-
 struct proc proc[NPROC];
 
 struct proc *initproc;
@@ -26,7 +25,7 @@ struct spinlock pid_lock;
 extern void forkret(void);
 static void freeproc(struct proc *p);
 
-extern char trampoline[]; // trampoline.S
+extern char trampoline[];
 
 // helps ensure that wakeups of wait()ing
 // parents are not lost. helps obey the
@@ -42,22 +41,14 @@ struct spinlock wait_lock;
 // Select one RUNNABLE process according to the currently
 // selected SchedForge scheduling policy.
 //
-// IMPORTANT:
-// The returned process has its p->lock HELD.
+// Returned process has p->lock HELD.
 //
-// The caller is responsible for releasing p->lock.
-//
-// =========================================================
 
 static struct proc *
 schedforge_select_process(void)
 {
   struct proc *p;
   struct proc *selected = 0;
-
-  // -------------------------------------------------------
-  // Scan all processes.
-  // -------------------------------------------------------
 
   for (p = proc; p < &proc[NPROC]; p++) {
 
@@ -72,13 +63,7 @@ schedforge_select_process(void)
     // -----------------------------------------------------
     // ROUND ROBIN
     // -----------------------------------------------------
-    //
-    // For the initial SchedForge implementation, RR uses
-    // the normal xv6 process-table scan.
-    //
-    // yield() returns the process to RUNNABLE state and
-    // the scheduler scans again.
-    //
+
     if (schedforge_policy == SCHED_RR) {
 
       if (selected == 0) {
@@ -92,22 +77,20 @@ schedforge_select_process(void)
     // -----------------------------------------------------
     // FCFS
     // -----------------------------------------------------
-    //
-    // Select the RUNNABLE process with the earliest
-    // creation_time.
-    //
+
     else if (schedforge_policy == SCHED_FCFS) {
 
       if (selected == 0) {
 
         selected = p;
+
       }
       else if (p->creation_time < selected->creation_time) {
 
-        // Release previous candidate.
         release(&selected->lock);
 
         selected = p;
+
       }
       else {
 
@@ -118,29 +101,20 @@ schedforge_select_process(void)
     // -----------------------------------------------------
     // MLFQ
     // -----------------------------------------------------
-    //
-    // Lower queue_level means higher priority.
-    //
-    // Example:
-    //
-    // queue 0 -> highest priority
-    // queue 1 -> medium priority
-    // queue 2 -> lowest priority
-    //
-    // If two processes are in the same queue, the older
-    // process is selected.
-    //
+
     else if (schedforge_policy == SCHED_MLFQ) {
 
       if (selected == 0) {
 
         selected = p;
+
       }
       else if (p->queue_level < selected->queue_level) {
 
         release(&selected->lock);
 
         selected = p;
+
       }
       else if (p->queue_level == selected->queue_level &&
                p->creation_time < selected->creation_time) {
@@ -148,6 +122,7 @@ schedforge_select_process(void)
         release(&selected->lock);
 
         selected = p;
+
       }
       else {
 
@@ -164,6 +139,7 @@ schedforge_select_process(void)
       if (selected == 0) {
 
         selected = p;
+
         continue;
       }
 
@@ -180,14 +156,15 @@ schedforge_select_process(void)
 // =========================================================
 
 // Allocate a page for each process's kernel stack.
-// Map it high in memory, followed by an invalid
-// guard page.
+// Map it high in memory, followed by an invalid guard page.
+
 void
 proc_mapstacks(pagetable_t kpgtbl)
 {
   struct proc *p;
 
   for (p = proc; p < &proc[NPROC]; p++) {
+
     char *pa = kalloc();
 
     if (pa == 0)
@@ -195,13 +172,19 @@ proc_mapstacks(pagetable_t kpgtbl)
 
     uint64 va = KSTACK((int)(p - proc));
 
-    kvmmap(kpgtbl, va, (uint64)pa, PGSIZE,
+    kvmmap(kpgtbl,
+           va,
+           (uint64)pa,
+           PGSIZE,
            PTE_R | PTE_W);
   }
 }
 
 
-// initialize the proc table.
+// =========================================================
+// PROCESS INITIALIZATION
+// =========================================================
+
 void
 procinit(void)
 {
@@ -221,9 +204,10 @@ procinit(void)
 }
 
 
-// Must be called with interrupts disabled,
-// to prevent race with process being moved
-// to a different CPU.
+// =========================================================
+// CPU FUNCTIONS
+// =========================================================
+
 int
 cpuid()
 {
@@ -233,8 +217,6 @@ cpuid()
 }
 
 
-// Return this CPU's cpu struct.
-// Interrupts must be disabled.
 struct cpu *
 mycpu(void)
 {
@@ -246,7 +228,6 @@ mycpu(void)
 }
 
 
-// Return the current struct proc *, or zero if none.
 struct proc *
 myproc(void)
 {
@@ -287,12 +268,6 @@ allocpid()
 // PROCESS ALLOCATION
 // =========================================================
 
-// Look in the process table for an UNUSED proc.
-// If found, initialize state required to run in the kernel,
-// and return with p->lock held.
-// If there are no free procs, or a memory allocation fails,
-// return 0.
-
 static struct proc *
 allocproc(void)
 {
@@ -320,24 +295,30 @@ found:
   p->pid = allocpid();
 
   // =======================================================
-  // Initialize SchedForge scheduling fields
+  // SCHEDFORGE SCHEDULING FIELDS
   // =======================================================
 
   p->sched_policy = DEFAULT_SCHEDULER;
-
   p->priority = 0;
 
   p->creation_time = ticks;
-
   p->run_time = 0;
-
   p->waiting_time = 0;
 
-  p->time_slice = RR_QUANTUM;
-
-  p->queue_level = 0;
-
   // =======================================================
+  // SCHEDFORGE PERFORMANCE METRICS
+  // =======================================================
+
+  p->first_run_time = 0;
+  p->completion_time = 0;
+  p->response_time = 0;
+  p->turnaround_time = 0;
+  p->time_slices = 0;
+
+  p->last_state_change = ticks;
+
+  p->time_slice = RR_QUANTUM;
+  p->queue_level = 0;
 
   p->state = USED;
 
@@ -364,9 +345,6 @@ found:
     return 0;
   }
 
-  // Set up new context to start executing at forkret,
-  // which returns to user space.
-
   memset(&p->context, 0, sizeof(p->context));
 
   p->context.ra = (uint64)forkret;
@@ -380,10 +358,6 @@ found:
 // =========================================================
 // FREE PROCESS
 // =========================================================
-
-// free a proc structure and the data hanging from it,
-// including user pages.
-// p->lock must be held.
 
 static void
 freeproc(struct proc *p)
@@ -418,6 +392,13 @@ freeproc(struct proc *p)
   p->run_time = 0;
   p->waiting_time = 0;
 
+  p->first_run_time = 0;
+  p->completion_time = 0;
+  p->response_time = 0;
+  p->turnaround_time = 0;
+  p->time_slices = 0;
+  p->last_state_change = 0;
+
   p->time_slice = RR_QUANTUM;
   p->queue_level = 0;
 
@@ -429,24 +410,15 @@ freeproc(struct proc *p)
 // PROCESS PAGE TABLE
 // =========================================================
 
-// Create a user page table for a given process,
-// with no user memory, but with trampoline and
-// trapframe pages.
-
 pagetable_t
 proc_pagetable(struct proc *p)
 {
   pagetable_t pagetable;
 
-  // An empty page table.
   pagetable = uvmcreate();
 
   if (pagetable == 0)
     return 0;
-
-  // map the trampoline code
-  // (for system call return)
-  // at the highest user virtual address.
 
   if (mappages(pagetable,
                TRAMPOLINE,
@@ -458,8 +430,6 @@ proc_pagetable(struct proc *p)
 
     return 0;
   }
-
-  // map the trapframe page just below the trampoline page.
 
   if (mappages(pagetable,
                TRAPFRAME,
@@ -480,9 +450,6 @@ proc_pagetable(struct proc *p)
   return pagetable;
 }
 
-
-// Free a process's page table,
-// and free the physical memory it refers to.
 
 void
 proc_freepagetable(pagetable_t pagetable,
@@ -506,8 +473,6 @@ proc_freepagetable(pagetable_t pagetable,
 // FIRST USER PROCESS
 // =========================================================
 
-// Set up first user process.
-
 void
 userinit(void)
 {
@@ -521,6 +486,8 @@ userinit(void)
 
   p->state = RUNNABLE;
 
+  p->last_state_change = ticks;
+
   release(&p->lock);
 }
 
@@ -528,9 +495,6 @@ userinit(void)
 // =========================================================
 // GROW PROCESS
 // =========================================================
-
-// Grow or shrink user memory by n bytes.
-// Return 0 on success, -1 on failure.
 
 int
 growproc(int n)
@@ -571,10 +535,6 @@ growproc(int n)
 // FORK
 // =========================================================
 
-// Create a new process, copying the parent.
-// Sets up child kernel stack to return as if from fork()
-// system call.
-
 int
 kfork(void)
 {
@@ -584,11 +544,9 @@ kfork(void)
 
   struct proc *p = myproc();
 
-  // Allocate process.
   if ((np = allocproc()) == 0)
     return -1;
 
-  // Copy user memory from parent to child.
   if (uvmcopy(p->pagetable,
               np->pagetable,
               p->sz) < 0) {
@@ -602,13 +560,10 @@ kfork(void)
 
   np->sz = p->sz;
 
-  // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
 
-  // Cause fork to return 0 in the child.
   np->trapframe->a0 = 0;
 
-  // increment reference counts on open file descriptors.
   for (i = 0; i < NOFILE; i++)
     if (p->ofile[i])
       np->ofile[i] = filedup(p->ofile[i]);
@@ -633,6 +588,8 @@ kfork(void)
 
   np->state = RUNNABLE;
 
+  np->last_state_change = ticks;
+
   release(&np->lock);
 
   return pid;
@@ -642,9 +599,6 @@ kfork(void)
 // =========================================================
 // REPARENT
 // =========================================================
-
-// Pass p's abandoned children to init.
-// Caller must hold wait_lock.
 
 void
 reparent(struct proc *p)
@@ -669,10 +623,6 @@ reparent(struct proc *p)
 // EXIT
 // =========================================================
 
-// Exit the current process. Does not return.
-// An exited process remains in the zombie state
-// until its parent calls wait().
-
 void
 kexit(int status)
 {
@@ -680,6 +630,23 @@ kexit(int status)
 
   if (p == initproc)
     panic("init exiting");
+
+  // -------------------------------------------------------
+  // SchedForge: record final CPU time
+  // -------------------------------------------------------
+
+  acquire(&p->lock);
+
+  p->run_time += ticks - p->last_state_change;
+
+  p->completion_time = ticks;
+
+  p->turnaround_time =
+      p->completion_time - p->creation_time;
+
+  p->last_state_change = ticks;
+
+  release(&p->lock);
 
   // Close all open files.
   for (int fd = 0; fd < NOFILE; fd++) {
@@ -704,10 +671,8 @@ kexit(int status)
 
   acquire(&wait_lock);
 
-  // Give any children to init.
   reparent(p);
 
-  // Parent might be sleeping in wait().
   wakeup(p->parent);
 
   acquire(&p->lock);
@@ -718,7 +683,6 @@ kexit(int status)
 
   release(&wait_lock);
 
-  // Jump into the scheduler, never to return.
   sched();
 
   panic("zombie exit");
@@ -728,9 +692,6 @@ kexit(int status)
 // =========================================================
 // WAIT
 // =========================================================
-
-// Wait for a child process to exit and return its pid.
-// Return -1 if this process has no children.
 
 int
 kwait(uint64 addr)
@@ -747,22 +708,18 @@ kwait(uint64 addr)
 
     havekids = 0;
 
-    // Scan through table looking for exited children.
     for (pp = proc;
          pp < &proc[NPROC];
          pp++) {
 
       if (pp->parent == p) {
 
-        // make sure the child isn't still
-        // in exit() or swtch().
         acquire(&pp->lock);
 
         havekids = 1;
 
         if (pp->state == ZOMBIE) {
 
-          // Found one.
           pid = pp->pid;
 
           if (addr != 0 &&
@@ -794,7 +751,6 @@ kwait(uint64 addr)
       }
     }
 
-    // No point waiting if we don't have any children.
     if (!havekids || killed(p)) {
 
       release(&wait_lock);
@@ -802,7 +758,6 @@ kwait(uint64 addr)
       return -1;
     }
 
-    // Wait for a child to exit.
     sleep_prepare(p);
 
     release(&wait_lock);
@@ -817,14 +772,6 @@ kwait(uint64 addr)
 // =========================================================
 // SCHEDFORGE SCHEDULER
 // =========================================================
-//
-// SchedForge supports:
-//
-//   SCHED_RR   -> Round Robin
-//   SCHED_FCFS -> First Come First Serve
-//   SCHED_MLFQ -> Multilevel Feedback Queue
-//
-// =========================================================
 
 void
 scheduler(void)
@@ -837,23 +784,12 @@ scheduler(void)
 
   for (;;) {
 
-    // The most recent process to run may have had
-    // interrupts turned off; enable them to avoid a
-    // deadlock if all processes are waiting.
-
     intr_on();
 
     intr_off();
 
-    // -----------------------------------------------------
     // Select process according to SchedForge policy.
-    // -----------------------------------------------------
-
     p = schedforge_select_process();
-
-    // -----------------------------------------------------
-    // Nothing runnable.
-    // -----------------------------------------------------
 
     if (p == 0) {
 
@@ -862,12 +798,27 @@ scheduler(void)
       continue;
     }
 
-    // -----------------------------------------------------
-    // Run selected process.
-    //
-    // p->lock is already held by
-    // schedforge_select_process().
-    // -----------------------------------------------------
+    // =====================================================
+    // SCHEDFORGE METRICS
+    // RUNNABLE -> RUNNING
+    // =====================================================
+
+    // Calculate waiting time.
+    p->waiting_time +=
+        ticks - p->last_state_change;
+
+    // Record first time process receives CPU.
+    if (p->first_run_time == 0) {
+
+      p->first_run_time = ticks;
+
+      p->response_time =
+          p->first_run_time -
+          p->creation_time;
+    }
+
+    // Process starts running.
+    p->last_state_change = ticks;
 
     p->state = RUNNING;
 
@@ -876,17 +827,9 @@ scheduler(void)
     swtch(&c->context,
           &p->context);
 
-    // Don't re-enable interrupts on release.
-    mycpu()->intena = 0;
-
-    // Process is done running for now.
-    //
-    // It should have changed p->state before
-    // returning to the scheduler.
-
     c->proc = 0;
 
-    // Release the lock held by the scheduler.
+    // p->lock is still held here.
     release(&p->lock);
   }
 }
@@ -895,12 +838,6 @@ scheduler(void)
 // =========================================================
 // SWITCH TO SCHEDULER
 // =========================================================
-
-// Switch to scheduler. Must hold only p->lock
-// and have changed proc->state.
-//
-// Saves and restores intena because intena is a property
-// of this kernel thread, not this CPU.
 
 void
 sched(void)
@@ -934,14 +871,19 @@ sched(void)
 // YIELD
 // =========================================================
 
-// Give up the CPU for one scheduling round.
-
 void
 yield(void)
 {
   struct proc *p = myproc();
 
   acquire(&p->lock);
+
+  // Record CPU time used before yielding.
+  p->run_time +=
+      ticks - p->last_state_change;
+
+  // Start waiting-time interval.
+  p->last_state_change = ticks;
 
   p->state = RUNNABLE;
 
@@ -955,9 +897,6 @@ yield(void)
 // FORK RETURN
 // =========================================================
 
-// A fork child's very first scheduling by scheduler()
-// will swtch to forkret.
-
 void
 forkret(void)
 {
@@ -967,23 +906,17 @@ forkret(void)
 
   struct proc *p = myproc();
 
-  // Still holding p->lock from scheduler.
   release(&p->lock);
 
   if (__atomic_load_n(&first,
                       __ATOMIC_ACQUIRE)) {
 
-    // File system initialization must be run in the
-    // context of a regular process.
-
     fsinit(ROOTDEV);
 
-    // ensure other cores see first=0.
     __atomic_store_n(&first,
                      0,
                      __ATOMIC_RELEASE);
 
-    // We can invoke kexec() now.
     p->trapframe->a0 =
       kexec("/init",
             (char *[]){"/init", 0});
@@ -992,7 +925,6 @@ forkret(void)
       panic("exec");
   }
 
-  // return to user space.
   prepare_return();
 
   uint64 satp =
@@ -1009,8 +941,6 @@ forkret(void)
 // =========================================================
 // SLEEP PREPARE
 // =========================================================
-
-// Register current process as waiting for wakeups on chan.
 
 void
 sleep_prepare(void *chan)
@@ -1032,9 +962,6 @@ sleep_prepare(void *chan)
 // SLEEP
 // =========================================================
 
-// Put the thread to sleep.
-// Assumes sleep_prepare() was called before.
-
 void
 sleep(void)
 {
@@ -1043,6 +970,12 @@ sleep(void)
   acquire(&p->lock);
 
   if (p->chan != 0) {
+
+    // Record CPU time before sleeping.
+    p->run_time +=
+        ticks - p->last_state_change;
+
+    p->last_state_change = ticks;
 
     p->state = SLEEPING;
 
@@ -1057,8 +990,6 @@ sleep(void)
 // WAKEUP
 // =========================================================
 
-// Wake up all processes sleeping on channel chan.
-
 void
 wakeup(void *chan)
 {
@@ -1072,13 +1003,14 @@ wakeup(void *chan)
 
     if (p->chan == chan) {
 
-      // Signal that wakeup happened.
       p->chan = 0;
 
-      // If actually asleep, make runnable.
       if (p->state == SLEEPING) {
 
         p->state = RUNNABLE;
+
+        // Start waiting-time measurement.
+        p->last_state_change = ticks;
       }
     }
 
@@ -1090,10 +1022,6 @@ wakeup(void *chan)
 // =========================================================
 // KILL
 // =========================================================
-
-// Kill the process with the given pid.
-// The victim won't exit until it tries to return
-// to user space.
 
 int
 kkill(int pid)
@@ -1112,8 +1040,9 @@ kkill(int pid)
 
       if (p->state == SLEEPING) {
 
-        // Wake process from sleep().
         p->state = RUNNABLE;
+
+        p->last_state_change = ticks;
       }
 
       release(&p->lock);
@@ -1165,9 +1094,6 @@ killed(struct proc *p)
 // =========================================================
 // COPY OUT
 // =========================================================
-
-// Copy to either a user address, or kernel address,
-// depending on usr_dst.
 
 int
 either_copyout(int user_dst,
@@ -1232,10 +1158,6 @@ either_copyin(void *dst,
 // =========================================================
 // PROCESS DUMP
 // =========================================================
-
-// Print a process listing to console.
-// For debugging.
-// Runs when user types ^P on console.
 
 void
 procdump(void)

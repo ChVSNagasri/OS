@@ -87,7 +87,8 @@ struct proc {
   void *chan;           // If non-zero, sleeping on chan
   int killed;           // If non-zero, have been killed
   int xstate;           // Exit status to be returned to parent's wait
-  int pid;              // Process ID
+  int pid;
+
   // SchedForge scheduling fields
   int sched_policy;
   int priority;
@@ -96,8 +97,16 @@ struct proc {
   uint64 run_time;
   uint64 waiting_time;
 
+  // SchedForge performance metrics
+  uint64 first_run_time;
+  uint64 completion_time;
+  uint64 response_time;
+  uint64 turnaround_time;
+  uint64 time_slices;
+  uint64 last_state_change;
+
   int time_slice;
-  int queue_level;
+  int queue_level;  
   // wait_lock must be held when using this:
   struct proc *parent; // Parent process
 
