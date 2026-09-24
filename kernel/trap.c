@@ -87,26 +87,49 @@ usertrap(void)
 // SCHEDFORGE TIMER / ROUND ROBIN QUANTUM
 // =========================================================
 
+// =========================================================
+// SCHEDFORGE TIMER / SCHEDULER POLICY
+// =========================================================
+
 if (which_dev == 2) {
 
   if (schedforge_policy == SCHED_RR) {
+
+    // -----------------------------------------
+    // ROUND ROBIN
+    // -----------------------------------------
 
     if (p->time_slice > 0)
       p->time_slice--;
 
     if (p->time_slice <= 0) {
 
-      // SchedForge: record completed RR time slice
+      // Record completed time slice
       p->time_slices++;
 
-      // Reset quantum for next CPU allocation
+      // Reset quantum
       p->time_slice = RR_QUANTUM;
 
+      // Give CPU to another runnable process
       yield();
     }
 
-  } else {
+  }
+  else if (schedforge_policy == SCHED_FCFS) {
 
+    // -----------------------------------------
+    // FCFS
+    // -----------------------------------------
+    // FCFS is non-preemptive.
+    // Do NOT yield because of timer interrupt.
+
+  }
+  else if (schedforge_policy == SCHED_MLFQ) {
+
+    // -----------------------------------------
+    // MLFQ
+    // -----------------------------------------
+    // MLFQ implementation will be added later.
     yield();
   }
 }
