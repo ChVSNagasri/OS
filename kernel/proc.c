@@ -5,7 +5,7 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
-
+#include "schedforge.h"
 struct cpu cpus[NCPU];
 
 struct proc proc[NPROC];
@@ -123,6 +123,16 @@ allocproc(void)
 
 found:
   p->pid = allocpid();
+  // Initialize SchedForge scheduling fields
+  p->sched_policy = DEFAULT_SCHEDULER;
+  p->priority = 0;
+
+  p->creation_time = ticks;
+  p->run_time = 0;
+  p->waiting_time = 0;
+
+  p->time_slice = RR_QUANTUM;
+  p->queue_level = 0;
   p->state = USED;
 
   // Allocate a trapframe page.
