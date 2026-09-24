@@ -5,6 +5,7 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "schedforge.h"
 
 struct spinlock tickslock;
 uint ticks;
@@ -82,8 +83,23 @@ usertrap(void)
     kexit(-1);
 
   // give up the CPU if this is a timer interrupt.
-  if (which_dev == 2)
-    yield();
+    // =========================================================
+  // SCHEDFORGE TIMER / ROUND ROBIN QUANTUM
+  // =========================================================
+
+  if (which_dev == 2) {
+    if (schedforge_policy == SCHED_RR) {
+      if (p->time_slice > 0)
+        p->time_slice--;
+
+      if (p->time_slice <= 0) {
+        p->time_slice = RR_QUANTUM;
+        yield();
+      }
+    } else {
+      yield();
+    }
+  }
 
   prepare_return();
 
@@ -91,12 +107,10 @@ usertrap(void)
   uint64 satp = MAKE_SATP(p->pagetable);
 
   // return to trampoline.S; satp value in a0.
-  return satp;
-}
-
-//
+  return satp;//
 // set up trapframe and control registers for a return to user space
 //
+}
 void
 prepare_return(void)
 {
