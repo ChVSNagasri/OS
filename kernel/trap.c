@@ -200,9 +200,14 @@ kerneltrap()
   }
 
   // give up the CPU if this is a timer interrupt.
-  if (which_dev == 2 && myproc() != 0)
+ // SchedForge: apply timer preemption according to policy.
+if (which_dev == 2 && myproc() != 0) {
+  if (schedforge_policy == SCHED_RR ||
+      schedforge_policy == SCHED_MLFQ) {
     yield();
-
+  }
+  // FCFS does not yield because of timer interrupts.
+}
   // the yield() may have caused some traps to occur,
   // so restore trap registers for use by kernelvec.S's sepc instruction.
   w_sepc(sepc);

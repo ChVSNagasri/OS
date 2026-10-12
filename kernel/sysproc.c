@@ -6,7 +6,7 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "vm.h"
-
+#include "schedforge.h"
 uint64
 sys_exit(void)
 {
@@ -109,4 +109,17 @@ sys_uptime(void)
   xticks = ticks;
   release(&tickslock);
   return xticks;
+}
+uint64
+sys_setsched(void)
+{
+  int policy;
+
+  argint(0, &policy);
+
+  if (policy < SCHED_RR || policy > SCHED_MLFQ)
+    return -1;
+
+  schedforge_policy = policy;
+  return 0;
 }
